@@ -1,0 +1,16 @@
+[project]
+name = "invoice-lines"
+version = "0.1.0"
+description = "Check whether invoice line items sum to each invoice's stated total"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+
+[project.scripts]
+invoice-lines = "invoice_lines.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
