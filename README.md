@@ -79,8 +79,9 @@ rows for you.
 ## status
 
 Early skeleton. The CLI and reader work end to end on well-formed
-input; see the roadmap in the issue tracker for what's still missing
-(tests, alternate column names, non-contiguous input).
+input, and the reader has unit test coverage (`tests/test_reader.py`,
+run with `python -m unittest discover`). Still missing: alternate
+column names, non-contiguous input, JSON output.
 
 ## license
 
