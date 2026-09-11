@@ -63,6 +63,28 @@ class BasicGrouping(unittest.TestCase):
         self.assertEqual(totals, [])
 
 
+class ColumnAliases(unittest.TestCase):
+    def test_total_alias_for_invoice_total(self):
+        total = run("invoice_id,total,amount\nINV-1,10.00,10.00\n")[0]
+        self.assertEqual(total.stated_total, Decimal("10.00"))
+
+    def test_amount_due_alias_for_invoice_total(self):
+        total = run("invoice_id,amount_due,amount\nINV-1,10.00,4.00\n")[0]
+        self.assertEqual(total.stated_total, Decimal("10.00"))
+        self.assertEqual(total.difference, Decimal("-6.00"))
+
+    def test_invoice_total_preferred_over_alias(self):
+        # if a file somehow has both, the canonical name wins
+        total = run(
+            "invoice_id,invoice_total,total,amount\nINV-1,10.00,999.00,10.00\n"
+        )[0]
+        self.assertEqual(total.stated_total, Decimal("10.00"))
+
+    def test_missing_invoice_total_and_aliases_raises(self):
+        with self.assertRaises(MalformedRow):
+            run("invoice_id,amount\nINV-1,10.00\n")
+
+
 class MalformedInput(unittest.TestCase):
     def test_missing_required_column(self):
         with self.assertRaises(MalformedRow):

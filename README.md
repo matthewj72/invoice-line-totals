@@ -23,6 +23,10 @@ INV-1003,300.00,1,Setup fee,150.00
 INV-1003,300.00,2,Monthly plan,150.00
 ```
 
+`invoice_total` can also be spelled `total` or `amount_due` - some
+exports use those instead. If a file has more than one of the three,
+`invoice_total` wins.
+
 Rows for the same invoice must be contiguous - that's what lets the
 reader stream the file instead of loading it into memory. Every export
 I've worked with is already ordered that way (it's how the underlying
@@ -80,8 +84,8 @@ rows for you.
 
 Early skeleton. The CLI and reader work end to end on well-formed
 input, and the reader has unit test coverage (`tests/test_reader.py`,
-run with `python -m unittest discover`). Still missing: alternate
-column names, non-contiguous input, JSON output.
+run with `python -m unittest discover`). Still missing: non-contiguous
+input, JSON output, localized number formats.
 
 ## license
 

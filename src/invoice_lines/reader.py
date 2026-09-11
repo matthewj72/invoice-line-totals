@@ -16,7 +16,16 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import IO, Iterator, Optional, Set
 
-REQUIRED_COLUMNS = ("invoice_id", "invoice_total", "amount")
+# Canonical column name -> accepted header names, in preference order.
+# QuickBooks and Xero both call the invoice's stated total something
+# other than "invoice_total" depending on the report you export from,
+# so we accept the aliases we've actually seen instead of making every
+# user rename a column before this tool will read their file.
+COLUMN_ALIASES = {
+    "invoice_id": ("invoice_id",),
+    "invoice_total": ("invoice_total", "total", "amount_due"),
+    "amount": ("amount",),
+}
 
 
 class MalformedRow(ValueError):
@@ -39,13 +48,34 @@ class InvoiceTotal:
         return self.computed_total - self.stated_total
 
 
-def _to_decimal(raw: str, *, field: str, invoice_id: str) -> Decimal:
+def _to_decimal(raw: Optional[str], *, field: str, invoice_id: str) -> Decimal:
     try:
         return Decimal(raw.strip())
     except (InvalidOperation, AttributeError) as exc:
         raise MalformedRow(
             f"invoice {invoice_id!r}: could not parse {field!r} value {raw!r} as a number"
         ) from exc
+
+
+def _resolve_columns(fieldnames: Optional[list]) -> dict:
+    """Map each canonical column to the header name actually present.
+
+    Raises MalformedRow naming the canonical column (not the alias) so
+    the error message stays meaningful regardless of which alias the
+    file used.
+    """
+    present = set(fieldnames or [])
+    resolved = {}
+    missing = []
+    for canonical, aliases in COLUMN_ALIASES.items():
+        found = next((a for a in aliases if a in present), None)
+        if found is None:
+            missing.append(canonical)
+        else:
+            resolved[canonical] = found
+    if missing:
+        raise MalformedRow(f"missing required column(s): {', '.join(missing)}")
+    return resolved
 
 
 def iter_invoice_totals(source: IO[str]) -> Iterator[InvoiceTotal]:
@@ -57,9 +87,7 @@ def iter_invoice_totals(source: IO[str]) -> Iterator[InvoiceTotal]:
     read in full, so this scales to exports with millions of lines.
     """
     reader = csv.DictReader(source)
-    missing = [c for c in REQUIRED_COLUMNS if c not in (reader.fieldnames or [])]
-    if missing:
-        raise MalformedRow(f"missing required column(s): {', '.join(missing)}")
+    columns = _resolve_columns(reader.fieldnames)
 
     closed_invoices: Set[str] = set()
     current_id: Optional[str] = None
@@ -76,7 +104,7 @@ def iter_invoice_totals(source: IO[str]) -> Iterator[InvoiceTotal]:
         )
 
     for row in reader:
-        invoice_id = (row.get("invoice_id") or "").strip()
+        invoice_id = (row.get(columns["invoice_id"]) or "").strip()
         if not invoice_id:
             raise MalformedRow("row has an empty invoice_id")
 
@@ -90,11 +118,15 @@ def iter_invoice_totals(source: IO[str]) -> Iterator[InvoiceTotal]:
                     "started - rows for one invoice must be contiguous"
                 )
             current_id = invoice_id
-            current_stated = _to_decimal(row["invoice_total"], field="invoice_total", invoice_id=invoice_id)
+            current_stated = _to_decimal(
+                row.get(columns["invoice_total"]), field="invoice_total", invoice_id=invoice_id
+            )
             current_computed = Decimal("0")
             current_count = 0
 
-        current_computed += _to_decimal(row["amount"], field="amount", invoice_id=invoice_id)
+        current_computed += _to_decimal(
+            row.get(columns["amount"]), field="amount", invoice_id=invoice_id
+        )
         current_count += 1
 
     if current_id is not None:
