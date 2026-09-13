@@ -69,6 +69,17 @@ Read from a pipe instead of a file:
 $ cat sample.csv | python -m invoice_lines -
 ```
 
+Emit one JSON object per line instead, for piping into another script:
+
+```
+$ python -m invoice_lines sample.csv --json
+{"invoice_id": "INV-1002", "match": false, "stated_total": "25.00", "computed_total": "24.50", "difference": "-0.50", "line_count": 1}
+```
+
+`--json` combines with `--all` and `--tolerance` the same way the default
+output does. The summary line still goes to stderr, so stdout stays
+one JSON object per line and is safe to pipe straight into `jq` or similar.
+
 ## why streaming matters here
 
 Some of the exports this is meant for run into the millions of lines.
@@ -83,9 +94,9 @@ rows for you.
 ## status
 
 Early skeleton. The CLI and reader work end to end on well-formed
-input, and the reader has unit test coverage (`tests/test_reader.py`,
-run with `python -m unittest discover`). Still missing: non-contiguous
-input, JSON output, localized number formats.
+input, and both have unit test coverage (`tests/`, run with
+`python -m unittest discover`). Still missing: non-contiguous input,
+localized number formats.
 
 ## license
 

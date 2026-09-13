@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from decimal import Decimal
 from typing import List, Optional
@@ -30,6 +31,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="print every invoice checked, not just the ones that don't match",
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="emit each result as a JSON object, one per line, instead of a tab-separated line",
+    )
     return parser
 
 
@@ -39,7 +45,24 @@ def _open(path: str):
     return open(path, newline="", encoding="utf-8")
 
 
-def _print_result(total: InvoiceTotal, bad: bool) -> None:
+def _print_result(total: InvoiceTotal, bad: bool, *, as_json: bool) -> None:
+    if as_json:
+        # Decimals stringified rather than left as float: json has no
+        # decimal type, and a float roundtrip is exactly the kind of
+        # rounding drift this tool exists to catch.
+        print(
+            json.dumps(
+                {
+                    "invoice_id": total.invoice_id,
+                    "match": not bad,
+                    "stated_total": str(total.stated_total),
+                    "computed_total": str(total.computed_total),
+                    "difference": str(total.difference),
+                    "line_count": total.line_count,
+                }
+            )
+        )
+        return
     marker = "MISMATCH" if bad else "ok"
     print(
         f"{marker}\t{total.invoice_id}\tstated={total.stated_total}\t"
@@ -60,7 +83,7 @@ def run(argv: Optional[List[str]] = None) -> int:
             if bad:
                 mismatches += 1
             if bad or args.all:
-                _print_result(total, bad)
+                _print_result(total, bad, as_json=args.json)
     except (MalformedRow, OutOfOrderInvoice) as exc:
         print(f"invoice-lines: {exc}", file=sys.stderr)
         return 2
