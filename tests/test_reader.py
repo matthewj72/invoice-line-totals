@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from invoice_lines.reader import (
     MalformedRow,
     OutOfOrderInvoice,
+    _normalize_number,
     iter_invoice_totals,
 )
 
@@ -105,6 +106,39 @@ class MalformedInput(unittest.TestCase):
     def test_missing_amount_field_on_row(self):
         with self.assertRaises(MalformedRow):
             run("invoice_id,invoice_total,amount\nINV-1,10.00\n")
+
+
+class LocalizedNumbers(unittest.TestCase):
+    def test_dollar_sign_prefix(self):
+        self.assertEqual(_normalize_number("$10.00"), "10.00")
+
+    def test_euro_sign_suffix_with_space(self):
+        self.assertEqual(_normalize_number("10,00 €"), "10.00")
+
+    def test_us_thousands_separator(self):
+        self.assertEqual(_normalize_number("$1,234.56"), "1234.56")
+
+    def test_european_thousands_separator(self):
+        self.assertEqual(_normalize_number("1.234,56"), "1234.56")
+
+    def test_comma_decimal_separator(self):
+        self.assertEqual(_normalize_number("10,5"), "10.5")
+
+    def test_bare_comma_thousands_no_decimal(self):
+        self.assertEqual(_normalize_number("1,234"), "1234")
+
+    def test_negative_amount_with_symbol(self):
+        self.assertEqual(_normalize_number("-$5.00"), "-5.00")
+
+    def test_full_row_with_european_format(self):
+        # the amounts contain a comma, so they must be quoted to survive
+        # as single CSV fields
+        total = run(
+            "invoice_id,invoice_total,amount\n"
+            'INV-1,"€1.234,56","€1.234,56"\n'
+        )[0]
+        self.assertEqual(total.stated_total, Decimal("1234.56"))
+        self.assertEqual(total.difference, Decimal("0"))
 
 
 class OutOfOrderInput(unittest.TestCase):

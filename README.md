@@ -27,6 +27,13 @@ INV-1003,300.00,2,Monthly plan,150.00
 exports use those instead. If a file has more than one of the three,
 `invoice_total` wins.
 
+`invoice_total` and `amount` tolerate a currency symbol (`$`, `€`,
+`£`, `¥`, `₹`) on either side of the number, and either the US
+(`1,234.56`) or European (`1.234,56`) grouping convention. When a
+value has only a comma and it's followed by one or two digits
+(`10,5`), it's read as a decimal separator rather than thousands
+grouping.
+
 Rows for the same invoice must be contiguous - that's what lets the
 reader stream the file instead of loading it into memory. Every export
 I've worked with is already ordered that way (it's how the underlying
@@ -95,8 +102,7 @@ rows for you.
 
 Early skeleton. The CLI and reader work end to end on well-formed
 input, and both have unit test coverage (`tests/`, run with
-`python -m unittest discover`). Still missing: non-contiguous input,
-localized number formats.
+`python -m unittest discover`). Still missing: non-contiguous input.
 
 ## license
 

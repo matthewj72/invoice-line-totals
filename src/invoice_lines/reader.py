@@ -27,6 +27,11 @@ COLUMN_ALIASES = {
     "amount": ("amount",),
 }
 
+# Symbols stripped from a money value before parsing. Position doesn't
+# matter - exports put these before ("$10.00") or after ("10,00 €")
+# the number, and sometimes with a space in between.
+CURRENCY_SYMBOLS = "$€£¥₹"
+
 
 class MalformedRow(ValueError):
     """A row is missing a required field or has a value we can't parse as money."""
@@ -48,9 +53,42 @@ class InvoiceTotal:
         return self.computed_total - self.stated_total
 
 
+def _normalize_number(raw: str) -> str:
+    """Strip currency symbols and normalize a localized decimal separator.
+
+    Handles the two grouping conventions seen in exports: US-style
+    ("$1,234.56", comma thousands / dot decimal) and European-style
+    ("1.234,56" or "10,50", dot thousands / comma decimal). When both
+    a comma and a dot appear, whichever comes last is the decimal
+    separator and the other is thousands grouping. When only a comma
+    appears, it's read as a decimal separator if it's followed by one
+    or two digits and nothing else (the shape of a fractional amount,
+    "10,5") - otherwise it's thousands grouping ("1,234") and dropped.
+    """
+    text = raw.strip()
+    for symbol in CURRENCY_SYMBOLS:
+        text = text.replace(symbol, "")
+    text = text.strip()
+
+    has_comma = "," in text
+    has_dot = "." in text
+    if has_comma and has_dot:
+        if text.rindex(",") > text.rindex("."):
+            text = text.replace(".", "").replace(",", ".")
+        else:
+            text = text.replace(",", "")
+    elif has_comma:
+        head, _, tail = text.rpartition(",")
+        if "," not in head and 1 <= len(tail) <= 2 and tail.isdigit():
+            text = head + "." + tail
+        else:
+            text = text.replace(",", "")
+    return text
+
+
 def _to_decimal(raw: Optional[str], *, field: str, invoice_id: str) -> Decimal:
     try:
-        return Decimal(raw.strip())
+        return Decimal(_normalize_number(raw))
     except (InvalidOperation, AttributeError) as exc:
         raise MalformedRow(
             f"invoice {invoice_id!r}: could not parse {field!r} value {raw!r} as a number"
