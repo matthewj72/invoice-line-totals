@@ -37,8 +37,8 @@ grouping.
 Rows for the same invoice must be contiguous - that's what lets the
 reader stream the file instead of loading it into memory. Every export
 I've worked with is already ordered that way (it's how the underlying
-SQL query is usually written), but if yours isn't, sort it by
-`invoice_id` first.
+SQL query is usually written), but if yours isn't, either sort it by
+`invoice_id` first or pass `--unsorted` (see below).
 
 ## usage
 
@@ -87,6 +87,21 @@ $ python -m invoice_lines sample.csv --json
 output does. The summary line still goes to stderr, so stdout stays
 one JSON object per line and is safe to pipe straight into `jq` or similar.
 
+If an invoice's rows aren't contiguous - a join that didn't preserve
+order, an export merged from multiple sources - use `--unsorted`
+instead of sorting the file yourself:
+
+```
+$ python -m invoice_lines sample.csv --unsorted
+```
+
+This gives up the O(1) memory guarantee: instead of one running total
+for the whole file, it keeps one running total per distinct
+`invoice_id` until end of file, so memory scales with the number of
+invoices, not the number of line items. For a file with millions of
+lines but a few thousand invoices that's still a small amount of
+memory - it just isn't flat.
+
 ## why streaming matters here
 
 Some of the exports this is meant for run into the millions of lines.
@@ -96,13 +111,16 @@ in memory - never the whole file, and never a whole invoice's line
 list (just its total and a count). Memory use is flat regardless of
 input size. The tradeoff is the contiguity requirement above: this
 is not a general groupby, it's a streaming one, so it can't reorder
-rows for you.
+rows for you by default. `--unsorted` (`iter_invoice_totals_unsorted`)
+relaxes that by keeping one running sum per invoice instead of one for
+the whole file - still far cheaper than loading the rows themselves,
+just not O(1).
 
 ## status
 
-Early skeleton. The CLI and reader work end to end on well-formed
-input, and both have unit test coverage (`tests/`, run with
-`python -m unittest discover`). Still missing: non-contiguous input.
+The CLI and reader work end to end on well-formed input, both sorted
+and unsorted, and both have unit test coverage (`tests/`, run with
+`python -m unittest discover`). Not yet published to PyPI.
 
 ## license
 

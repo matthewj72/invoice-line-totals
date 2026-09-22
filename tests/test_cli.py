@@ -62,5 +62,28 @@ class JsonOutput(unittest.TestCase):
         self.assertEqual(out, "")
 
 
+class UnsortedFlag(unittest.TestCase):
+    SPLIT = (
+        "invoice_id,invoice_total,amount\n"
+        "INV-1,10.00,5.00\n"
+        "INV-2,7.00,7.00\n"
+        "INV-1,10.00,5.00\n"
+    )
+
+    def test_split_rows_fail_without_flag(self):
+        exit_code, _, err = run_cli(["-"], self.SPLIT)
+        self.assertEqual(exit_code, 2)
+        self.assertIn("INV-1", err)
+
+    def test_split_rows_succeed_with_flag(self):
+        exit_code, out, _ = run_cli(["-", "--unsorted", "--all", "--json"], self.SPLIT)
+        self.assertEqual(exit_code, 0)
+        records = [json.loads(line) for line in out.strip().splitlines()]
+        self.assertEqual({r["invoice_id"] for r in records}, {"INV-1", "INV-2"})
+        inv1 = next(r for r in records if r["invoice_id"] == "INV-1")
+        self.assertEqual(inv1["computed_total"], "10.00")
+        self.assertEqual(inv1["line_count"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()

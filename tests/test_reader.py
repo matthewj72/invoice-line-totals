@@ -13,11 +13,16 @@ from invoice_lines.reader import (
     OutOfOrderInvoice,
     _normalize_number,
     iter_invoice_totals,
+    iter_invoice_totals_unsorted,
 )
 
 
 def run(csv_text: str):
     return list(iter_invoice_totals(io.StringIO(csv_text)))
+
+
+def run_unsorted(csv_text: str):
+    return list(iter_invoice_totals_unsorted(io.StringIO(csv_text)))
 
 
 class BasicGrouping(unittest.TestCase):
@@ -150,6 +155,54 @@ class OutOfOrderInput(unittest.TestCase):
                 "INV-2,3.00,3.00\n"
                 "INV-1,10.00,5.00\n"
             )
+
+
+class UnsortedGrouping(unittest.TestCase):
+    def test_split_invoice_rows_are_reunited(self):
+        totals = run_unsorted(
+            "invoice_id,invoice_total,amount\n"
+            "INV-1,10.00,5.00\n"
+            "INV-2,3.00,3.00\n"
+            "INV-1,10.00,5.00\n"
+        )
+        by_id = {t.invoice_id: t for t in totals}
+        self.assertEqual(set(by_id), {"INV-1", "INV-2"})
+        self.assertEqual(by_id["INV-1"].computed_total, Decimal("10.00"))
+        self.assertEqual(by_id["INV-1"].line_count, 2)
+        self.assertEqual(by_id["INV-2"].computed_total, Decimal("3.00"))
+
+    def test_result_order_matches_first_appearance(self):
+        totals = run_unsorted(
+            "invoice_id,invoice_total,amount\n"
+            "INV-2,3.00,3.00\n"
+            "INV-1,10.00,5.00\n"
+            "INV-2,3.00,0.00\n"
+            "INV-1,10.00,5.00\n"
+        )
+        self.assertEqual([t.invoice_id for t in totals], ["INV-2", "INV-1"])
+
+    def test_stated_total_taken_from_first_row_seen(self):
+        # matches iter_invoice_totals: only the first occurrence's
+        # invoice_total is authoritative, later repeats are ignored.
+        total = run_unsorted(
+            "invoice_id,invoice_total,amount\n"
+            "INV-1,10.00,5.00\n"
+            "INV-1,999.00,5.00\n"
+        )[0]
+        self.assertEqual(total.stated_total, Decimal("10.00"))
+
+    def test_contiguous_input_still_works(self):
+        totals = run_unsorted(
+            "invoice_id,invoice_total,amount\n"
+            "INV-1,10.00,4.00\n"
+            "INV-1,10.00,6.00\n"
+        )
+        self.assertEqual(len(totals), 1)
+        self.assertEqual(totals[0].difference, Decimal("0"))
+
+    def test_empty_invoice_id_raises(self):
+        with self.assertRaises(MalformedRow):
+            run_unsorted("invoice_id,invoice_total,amount\n,10.00,10.00\n")
 
 
 if __name__ == "__main__":

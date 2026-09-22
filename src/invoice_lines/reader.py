@@ -1,12 +1,16 @@
 """Streaming reader for invoice line-item exports.
 
-The reader assumes rows belonging to the same invoice are contiguous,
-which holds for every export I've dealt with so far (QuickBooks, Xero,
-a plain SQL dump ordered by invoice_id). Under that assumption we only
-ever need to hold one invoice's running total in memory, no matter how
-large the file is. If rows for an invoice are split apart, that means
-the export itself is unsorted, so we raise instead of silently
-producing a wrong total for two half-groups.
+iter_invoice_totals assumes rows belonging to the same invoice are
+contiguous, which holds for every export I've dealt with so far
+(QuickBooks, Xero, a plain SQL dump ordered by invoice_id). Under that
+assumption we only ever need to hold one invoice's running total in
+memory, no matter how large the file is. If rows for an invoice are
+split apart, that means the export itself is unsorted, so we raise
+instead of silently producing a wrong total for two half-groups.
+
+iter_invoice_totals_unsorted drops that assumption for exports that
+really do arrive out of order, at the cost of one running total per
+distinct invoice_id instead of one for the whole file.
 """
 
 from __future__ import annotations
@@ -169,3 +173,46 @@ def iter_invoice_totals(source: IO[str]) -> Iterator[InvoiceTotal]:
 
     if current_id is not None:
         yield flush()
+
+
+def iter_invoice_totals_unsorted(source: IO[str]) -> Iterator[InvoiceTotal]:
+    """Same as iter_invoice_totals, but for exports where a given
+    invoice's rows aren't necessarily contiguous.
+
+    This gives up the O(1) memory guarantee - it keeps one running
+    total per distinct invoice_id instead of one for the whole file -
+    but it's still far cheaper than loading the file, since a line
+    item is folded into its invoice's sum and discarded rather than
+    kept around. Memory scales with the number of distinct invoices,
+    not the number of rows.
+    """
+    reader = csv.DictReader(source)
+    columns = _resolve_columns(reader.fieldnames)
+
+    accumulators: dict = {}
+
+    for row in reader:
+        invoice_id = (row.get(columns["invoice_id"]) or "").strip()
+        if not invoice_id:
+            raise MalformedRow("row has an empty invoice_id")
+
+        entry = accumulators.get(invoice_id)
+        if entry is None:
+            stated = _to_decimal(
+                row.get(columns["invoice_total"]), field="invoice_total", invoice_id=invoice_id
+            )
+            entry = [stated, Decimal("0"), 0]
+            accumulators[invoice_id] = entry
+
+        entry[1] += _to_decimal(
+            row.get(columns["amount"]), field="amount", invoice_id=invoice_id
+        )
+        entry[2] += 1
+
+    for invoice_id, (stated, computed, count) in accumulators.items():
+        yield InvoiceTotal(
+            invoice_id=invoice_id,
+            stated_total=stated,
+            computed_total=computed,
+            line_count=count,
+        )

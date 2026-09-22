@@ -8,7 +8,13 @@ import sys
 from decimal import Decimal
 from typing import List, Optional
 
-from .reader import InvoiceTotal, MalformedRow, OutOfOrderInvoice, iter_invoice_totals
+from .reader import (
+    InvoiceTotal,
+    MalformedRow,
+    OutOfOrderInvoice,
+    iter_invoice_totals,
+    iter_invoice_totals_unsorted,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -35,6 +41,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         help="emit each result as a JSON object, one per line, instead of a tab-separated line",
+    )
+    parser.add_argument(
+        "--unsorted",
+        action="store_true",
+        help=(
+            "allow a given invoice's rows to be split apart instead of contiguous "
+            "(uses memory proportional to the number of distinct invoices, not O(1))"
+        ),
     )
     return parser
 
@@ -76,8 +90,9 @@ def run(argv: Optional[List[str]] = None) -> int:
     mismatches = 0
 
     source = _open(args.csv_path)
+    read = iter_invoice_totals_unsorted if args.unsorted else iter_invoice_totals
     try:
-        for total in iter_invoice_totals(source):
+        for total in read(source):
             checked += 1
             bad = abs(total.difference) > args.tolerance
             if bad:
